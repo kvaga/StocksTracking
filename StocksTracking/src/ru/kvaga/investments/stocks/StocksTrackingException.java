@@ -31,6 +31,28 @@ public class StocksTrackingException extends Exception{
 		}
 	}
 	
+	public static class GetFullStockNameException extends StocksTrackingException{
+		private GetFullStockNameException(String message, String url) {
+			super(String.format("\nAn error has occured during getting full stock name for URL [%s] \n", url) + message);
+		}
+		
+		public static class ParsingResponseException extends GetFullStockNameException{
+			public ParsingResponseException(String message, String url) {
+				super(message, url);
+			}
+		}
+		
+	}
+	
+	public static class GetContentOFSiteException extends StocksTrackingException{
+		public GetContentOFSiteException(String message, String stockName, String url) {
+			super(String.format("\nAn error has occured during getting current price of stock [%s] for URL [%s] \n", stockName, url) + message);
+		}
+		
+		
+		
+	}
+	
 	public static class GetCurrentPriceOfStockException extends StocksTrackingException{
 		private GetCurrentPriceOfStockException(String message, String stockName, String url) {
 			super(String.format("\nAn error has occured during getting current price of stock [%s] for URL [%s] \n", stockName, url) + message);
@@ -41,6 +63,8 @@ public class StocksTrackingException extends Exception{
 				super(message, stockName, url);
 			}
 		}
+		
+		
 		
 		public static class Common extends GetCurrentPriceOfStockException{
 			public Common(String message, String stockName, String url) {

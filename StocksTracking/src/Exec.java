@@ -17,6 +17,7 @@ import java.util.regex.Pattern;
 
 import ru.kvaga.investments.stocks.StockItem;
 import ru.kvaga.investments.stocks.StocksTrackingException;
+import ru.kvaga.investments.stocks.StocksTrackingException.GetContentOFSiteException;
 import ru.kvaga.investments.stocks.StocksTrackingException.GetCurrentPriceOfStockException.Common;
 import ru.kvaga.investments.stocks.StocksTrackingException.GetCurrentPriceOfStockException.ParsingResponseException;
 import ru.kvaga.investments.stocks.StocksTrackingException.StoreDataException;
@@ -35,6 +36,10 @@ public class Exec {
 	public static void main(String[] args) throws Exception {
 		String dataFileName="data/StocksTracking.csv";
 		String configFileName="conf/TelegramSendMessage.env";
+		String URL_TEXT_MOEXX="https://iss.moex.com/iss/engines/stock/markets/shares/boards/TQBR/securities.xml?iss.meta=off&iss.only=securities&securities.columns=SECID,PREVADMITTEDQUOTE";
+//		String URL_TEXT_TINKOFF="https://www.tinkoff.ru/invest/stocks/"+stockShortName+"/";;
+		String URL_TEXT_TINKOFF="https://www.tinkoff.ru/invest/stocks/%s/";
+
 		ArrayList<StockItem> actualStockItems = new ArrayList<StockItem>();
 		try {
 			// Init
@@ -48,12 +53,19 @@ public class Exec {
 				actualStockItem.setName(si.getName());
 				actualStockItem.setTraceablePrice(si.getTraceablePrice());
 				if(!si.getName().startsWith("#")) {
-					currentPrice = getCurrentPriceOfStock(si.getName());
+					String url=String.format(URL_TEXT_TINKOFF, si.getName());
+					System.out.println("Url is ready: " + url);
+					String response=getContentOfSite(si.getName(), url);
+					System.out.println("The response received");
+					String fullName=getFullNameOfStock(response, si.getName(), url);
+					System.out.println("Full name received: " + fullName);
+					currentPrice = getCurrentPriceOfStock(si.getName(), response, url);
+					System.out.println("Current price received: " + currentPrice);
 					actualStockItem.setLastPrice(currentPrice);
 
 					if(si.getTraceablePrice() > currentPrice) {
 						telegramSendMessage.sendMessage(
-								"Stock: <a href='https://tinkoff.ru/invest/stocks/"+si.getName()+"/'>"+si.getName()+"</a>"
+								"Stock: <a href='https://tinkoff.ru/invest/stocks/"+si.getName()+"/'>"+si.getName()+"</a> " + fullName
 								+ TelegramSendMessage.LINEBREAK
 								+ "Tracking Price: " + si.getTraceablePrice()
 								+ TelegramSendMessage.LINEBREAK 
@@ -112,11 +124,34 @@ public class Exec {
 		
 	}
 
-	private static double getCurrentPriceOfStock(String name) throws Common, ParsingResponseException {
-		String URL_TEXT_MOEXX="https://iss.moex.com/iss/engines/stock/markets/shares/boards/TQBR/securities.xml?iss.meta=off&iss.only=securities&securities.columns=SECID,PREVADMITTEDQUOTE";
-		String URL_TEXT_TINKOFF="https://www.tinkoff.ru/invest/stocks/"+name+"/";
-
-		String urlText=URL_TEXT_TINKOFF;
+	private static String getFullNameOfStock(String response, String stockName, String urlText) throws ru.kvaga.investments.stocks.StocksTrackingException.GetFullStockNameException.ParsingResponseException {
+		String REGEX_PATTERN_TEXT_TINKOFF_FULL_NAME="<meta charset=\"UTF-8\">.*" + 
+				"<title data-meta-dynamic=\"true\">Купить акции (?<fullName>.*) \\("+stockName+"\\).*</title>.*" + 
+				"<meta property=\"og:title\"" ;
+		Pattern patternForFullName = Pattern.compile(REGEX_PATTERN_TEXT_TINKOFF_FULL_NAME);
+		Matcher matcherForFullName = patternForFullName.matcher(response);
+		String stockFullName;
+		if(matcherForFullName.find()) {
+			stockFullName=matcherForFullName.group("fullName");
+		}else {
+			throw new StocksTrackingException.
+			GetFullStockNameException.
+			ParsingResponseException(String.format("Couldn't find fullName for stock during parsing web response with "
+					+ "regex pattern text [%s]. \n"
+//					+ "Web response [%s]"
+					,
+					REGEX_PATTERN_TEXT_TINKOFF_FULL_NAME
+//					,response
+					), 
+					urlText);
+		}
+		return stockFullName;
+		
+	}
+	
+	private static String getContentOfSite(String stockShortName, String urlText) throws Common, GetContentOFSiteException {
+		
+		
 		
 			URL url = null;
 			HttpURLConnection con=null;
@@ -132,8 +167,9 @@ public class Exec {
 				while ((s = br.readLine()) != null) {
 					sb.append(s);
 				}
+				return sb.toString();
 			} catch (IOException e) {
-				throw new StocksTrackingException.GetCurrentPriceOfStockException.Common(e.getMessage(), name, urlText);
+				throw new StocksTrackingException.GetContentOFSiteException(e.getMessage(), stockShortName, urlText);
 			}finally {
 				if(br!=null) {
 					try {
@@ -144,7 +180,9 @@ public class Exec {
 				}
 			}
 
-			String response = sb.toString();
+	}
+	
+	private static double getCurrentPriceOfStock(String name, String response, String url) throws Common, ParsingResponseException {		
 			String REGEX_PATTERN_TEXT_MOEXX= "\\<row SECID=\""+name+"\" PREVADMITTEDQUOTE=\"(?<lastPrice>\\d+\\.{0,1}\\d*)\" />";
 			String REGEX_PATTERN_TEXT_TINKOFF=
 					"<div class=\"GridColumn__column_2h5Ek GridColumn__column_hidden_on_phone_15UiO GridColumn__column_hidden_on_tabletS_G1iCc GridColumn__column_hidden_on_tabletL_3WX2Z.*"
@@ -164,7 +202,7 @@ public class Exec {
 				GetCurrentPriceOfStockException.
 				ParsingResponseException(String.format("Couldn't find lastPrice value for stock during parsing web response with "
 						+ "regex pattern text [%s]. \n"
-						+ "Web response [%s]",regexPatternText, response), name, urlText);
+						+ "Web response [%s]",regexPatternText, response), name, url);
 			}
 		}
 
